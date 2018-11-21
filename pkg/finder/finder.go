@@ -63,9 +63,11 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 }
 
 func ShowFileList() {
+	log.Sugar.Infof("开始检索目录 ===> %s", etc.GetSrcPath())
 	if err := filepath.Walk(etc.GetSrcPath(), WalkFunc); err != nil {
 		log.Logger.Error(err.Error())
 	}
+	log.Sugar.Infof("待处理文件数 ===> %d, 开始拷贝", len(PersionMap))
 	return
 }
 
@@ -76,29 +78,27 @@ func CopyFileToDst()  {
 		log.Sugar.Debugf("k=%s, name=%s, size=%d, splitName=%s, dirWithoutP=%s", k, v.Name(), v.Size(), splitName, dirWithoutP)
 		// dat已经拷贝跳过
 		if file.IsFileExist(path.Join(etc.GetDstPath(), dat, splitName), fmt.Sprintf("%s.%s", splitName, dat)) {
-			break
+			log.Sugar.Infof("文件 %s 已拷贝, 跳过", fmt.Sprintf("%s.%s", splitName, dat))
+			continue
 		}
 		// xml已经拷贝跳过
 		if file.IsFileExist(path.Join(etc.GetDstPath(), xml, splitName), fmt.Sprintf("%s.%s", splitName, xml)) {
-			break
+			log.Sugar.Infof("文件 %s 已拷贝, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
+			continue
 		}
 		// M目录下的对应xml文件不存在跳过
 		if !file.IsFileExist(path.Join(dirWithoutP, "M", splitName), fmt.Sprintf("%s.%s", splitName, xml)) {
-			break
+			continue
 		}
 		// 确保dat目录存在
 		if err := EnsureDir(path.Join(etc.GetDstPath(), dat, splitName)); err != nil {
 			log.Logger.Error(err.Error())
-			break
+			continue
 		}
 		// 确保xml目录存在
 		if err := EnsureDir(path.Join(etc.GetDstPath(), xml, splitName)); err != nil {
 			log.Logger.Error(err.Error())
-			break
-		}
-		if err := EnsureDir(path.Join(etc.GetDstPath(), "xml")); err != nil {
-			log.Logger.Error(err.Error())
-			break
+			continue
 		}
 
 		srcXml := path.Join(dirWithoutP, "M", splitName, fmt.Sprintf("%s.%s", splitName, xml))
