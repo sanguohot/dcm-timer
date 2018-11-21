@@ -1,0 +1,5 @@
+{
+	"output": "./data/dst",
+	"interval": 60,
+	"source": "./data/src"
+}
