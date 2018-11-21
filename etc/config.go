@@ -56,9 +56,9 @@ func GetServerDir() string {
 }
 
 func GetDstPath() string {
-	return path.Join(serverPath, Config.Output)
+	return path.Join(Config.Output)
 }
 
 func GetSrcPath() string {
-	return path.Join(serverPath, Config.Source)
+	return path.Join(Config.Source)
 }
