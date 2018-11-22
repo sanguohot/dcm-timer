@@ -14,10 +14,10 @@ func timerTask()  {
 }
 
 func init() {
+	timerTask()
 	// 一分钟写一百条
 	ticks := time.NewTicker(time.Duration(etc.Config.Interval) * time.Second)
 	tick := ticks.C
-	//timerTask()
 	go func() {
 		for _ = range tick {
 			timerTask()
