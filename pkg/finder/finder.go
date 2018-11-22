@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 var (
@@ -20,6 +21,8 @@ var (
 	xml = "xml"
 	PersionPrefix = "Prep_"
 	PersionSuffix = fmt.Sprintf(".%s", dat)
+	defaultWorkers = 10
+	layout = "2006-01-02 15:04:05"
 )
 
 func GetSplitBySystem() string {
@@ -50,6 +53,11 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 		if !strings.Contains(srcPath, GetDcmTypeFilterBySystemSplit("P")) {
 			return nil
 		}
+		if since, err := time.ParseInLocation(layout, etc.Config.Since, time.Local); err != nil {
+			return err
+		}else if info.ModTime().Before(since) {
+			return nil
+		}
 		if strings.HasSuffix(srcPath,PersionSuffix) {
 			fileInfo, ok := PersionMap[parentDir]
 			if !ok {
@@ -67,22 +75,24 @@ func ShowFileList() {
 	if err := filepath.Walk(etc.GetSrcPath(), WalkFunc); err != nil {
 		log.Logger.Error(err.Error())
 	}
-	log.Sugar.Infof("待处理文件数 ===> %d, 开始拷贝", len(PersionMap))
 	return
 }
 
-func CopyFileToDst()  {
-	for k, v := range PersionMap {
+func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
+	for j := range jobs {
+		k := j
+		v := PersionMap[j]
 		splitName := v.Name()[len(PersionPrefix):strings.LastIndex(v.Name(), PersionSuffix)]
 		dirWithoutP := k[:strings.LastIndex(k, GetDcmTypeFilterLeftBySystemSplit("P"))]
 		log.Sugar.Debugf("k=%s, name=%s, size=%d, splitName=%s, dirWithoutP=%s", k, v.Name(), v.Size(), splitName, dirWithoutP)
 		// dat已经拷贝跳过
-		if file.IsFileExist(path.Join(etc.GetDstPath(), dat, splitName), fmt.Sprintf("%s.%s", splitName, dat)) {
+		dstDir := path.Join(etc.GetDstPath(), splitName)
+		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, dat)) {
 			log.Sugar.Infof("文件 %s 已拷贝, 跳过", fmt.Sprintf("%s.%s", splitName, dat))
 			continue
 		}
 		// xml已经拷贝跳过
-		if file.IsFileExist(path.Join(etc.GetDstPath(), xml, splitName), fmt.Sprintf("%s.%s", splitName, xml)) {
+		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, xml)) {
 			log.Sugar.Infof("文件 %s 已拷贝, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
 			continue
 		}
@@ -90,25 +100,42 @@ func CopyFileToDst()  {
 		if !file.IsFileExist(path.Join(dirWithoutP, "M", splitName), fmt.Sprintf("%s.%s", splitName, xml)) {
 			continue
 		}
-		// 确保dat目录存在
-		if err := EnsureDir(path.Join(etc.GetDstPath(), dat, splitName)); err != nil {
-			log.Logger.Error(err.Error())
-			continue
-		}
-		// 确保xml目录存在
-		if err := EnsureDir(path.Join(etc.GetDstPath(), xml, splitName)); err != nil {
+		// 确保目录存在
+		if err := EnsureDir(dstDir); err != nil {
 			log.Logger.Error(err.Error())
 			continue
 		}
 
 		srcXml := path.Join(dirWithoutP, "M", splitName, fmt.Sprintf("%s.%s", splitName, xml))
-		dstXml := path.Join(etc.GetDstPath(), xml, splitName, fmt.Sprintf("%s.%s", splitName, xml))
+		dstXml := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, xml))
 		srcDat := path.Join(k, v.Name())
-		dstDat := path.Join(etc.GetDstPath(), dat, splitName, fmt.Sprintf("%s.%s", splitName, dat))
+		dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
 		Copy(srcXml, dstXml)
-		log.Sugar.Infof("拷贝成功 %s ===> %s", srcXml, dstXml)
+		log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s", id, srcXml, dstXml)
 		Copy(srcDat, dstDat)
-		log.Sugar.Infof("拷贝成功 %s ===> %s", srcDat, dstDat)
+		log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s", id, srcDat, dstDat)
+		results <- true
+	}
+}
+
+func CopyFileToDst()  {
+	workers := defaultWorkers
+	if len(PersionMap) < defaultWorkers {
+		workers = len(PersionMap)
+	}
+	log.Sugar.Infof("待处理数 ===> %d, 搬砖者数 ===> %d", len(PersionMap), workers)
+	jobs := make(chan string, len(PersionMap))
+	results := make(chan bool, len(PersionMap))
+	for w := 1; w <= workers; w++ {
+		go CopyWorker(w, jobs, results)
+	}
+	for k, _ := range PersionMap {
+		jobs <- k
+	}
+	close(jobs)
+	// 这里收集所有结果
+	for a := 1; a <= len(PersionMap); a++ {
+		<-results
 	}
 }
 

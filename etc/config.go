@@ -13,6 +13,7 @@ type ConfigStruct struct {
 	Source string    `json:"source"`
 	Output   string `json:"output"`
 	Interval int    `json:"interval"`
+	Since string    `json:"since"`
 }
 
 var (

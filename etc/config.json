@@ -1,5 +1,6 @@
 {
 	"output": "./data/dst",
-	"interval": 60,
+	"interval": 10,
+	"since": "2018-11-21 00:00:00",
 	"source": "./data/src"
 }
