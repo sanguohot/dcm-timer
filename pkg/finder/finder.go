@@ -71,7 +71,7 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 }
 
 func ShowFileList() {
-	log.Sugar.Infof("开始检索目录 ===> %s", etc.GetSrcPath())
+	log.Sugar.Infof("检索目录 ===> %s", etc.GetSrcPath())
 	if err := filepath.Walk(etc.GetSrcPath(), WalkFunc); err != nil {
 		log.Logger.Error(err.Error())
 	}
@@ -89,20 +89,24 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 		dstDir := path.Join(etc.GetDstPath(), splitName)
 		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, dat)) {
 			log.Sugar.Infof("文件 %s 已拷贝, 跳过", fmt.Sprintf("%s.%s", splitName, dat))
+			results <- true
 			continue
 		}
 		// xml已经拷贝跳过
 		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, xml)) {
 			log.Sugar.Infof("文件 %s 已拷贝, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
+			results <- true
 			continue
 		}
 		// M目录下的对应xml文件不存在跳过
 		if !file.IsFileExist(path.Join(dirWithoutP, "M", splitName), fmt.Sprintf("%s.%s", splitName, xml)) {
+			results <- true
 			continue
 		}
 		// 确保目录存在
 		if err := EnsureDir(dstDir); err != nil {
 			log.Logger.Error(err.Error())
+			results <- true
 			continue
 		}
 
@@ -110,9 +114,17 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 		dstXml := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, xml))
 		srcDat := path.Join(k, v.Name())
 		dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
-		Copy(srcXml, dstXml)
+		if err := Copy(srcXml, dstXml); err != nil {
+			log.Logger.Error(err.Error())
+			results <- true
+			continue
+		}
 		log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s", id, srcXml, dstXml)
-		Copy(srcDat, dstDat)
+		if err := Copy(srcDat, dstDat); err != nil {
+			log.Logger.Error(err.Error())
+			results <- true
+			continue
+		}
 		log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s", id, srcDat, dstDat)
 		results <- true
 	}
@@ -137,6 +149,7 @@ func CopyFileToDst()  {
 	for a := 1; a <= len(PersionMap); a++ {
 		<-results
 	}
+	close(results)
 }
 
 func EnsureDir(dir string) error {
