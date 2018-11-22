@@ -5,7 +5,6 @@ import (
 	"github.com/sanguohot/dcm-timer/etc"
 	"github.com/sanguohot/dcm-timer/pkg/common/file"
 	"github.com/sanguohot/dcm-timer/pkg/common/log"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -114,13 +113,13 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 		dstXml := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, xml))
 		srcDat := path.Join(k, v.Name())
 		dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
-		if err := Copy(srcXml, dstXml); err != nil {
+		if _, err := file.StandardCopy(srcXml, dstXml); err != nil {
 			log.Logger.Error(err.Error())
 			results <- true
 			continue
 		}
 		log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s", id, srcXml, dstXml)
-		if err := Copy(srcDat, dstDat); err != nil {
+		if _, err := file.StandardCopy(srcDat, dstDat); err != nil {
 			log.Logger.Error(err.Error())
 			results <- true
 			continue
@@ -159,15 +158,3 @@ func EnsureDir(dir string) error {
 	return nil
 }
 
-func Copy(src, dst string) error {
-	input, err := ioutil.ReadFile(src)
-	if err != nil {
-		return err
-	}
-
-	err = ioutil.WriteFile(dst, input, os.ModePerm)
-	if err != nil {
-		return err
-	}
-	return nil
-}

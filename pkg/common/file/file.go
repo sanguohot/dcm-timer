@@ -1,7 +1,9 @@
 package file
 
 import (
+	"fmt"
 	"github.com/sanguohot/dcm-timer/pkg/common/log"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -50,4 +52,42 @@ func FilePathExist(_path string) bool {
 		return false
 	}
 	return true
+}
+
+func Copy(src, dst string) error {
+	input, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(dst, input, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func StandardCopy(src, dst string) (int64, error) {
+	sourceFileStat, err := os.Stat(src)
+	if err != nil {
+		return 0, err
+	}
+
+	if !sourceFileStat.Mode().IsRegular() {
+		return 0, fmt.Errorf("%s is not a regular file", src)
+	}
+
+	source, err := os.Open(src)
+	if err != nil {
+		return 0, err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return 0, err
+	}
+	defer destination.Close()
+	nBytes, err := io.Copy(destination, source)
+	return nBytes, err
 }
