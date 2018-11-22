@@ -57,7 +57,7 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 		}else if info.ModTime().Before(since) {
 			return nil
 		}
-		if strings.HasSuffix(srcPath,PersionSuffix) {
+		if strings.HasPrefix(info.Name(), PersionPrefix) && strings.HasSuffix(info.Name(), PersionSuffix) {
 			fileInfo, ok := PersionMap[parentDir]
 			if !ok {
 				PersionMap[parentDir] = info
