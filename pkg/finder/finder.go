@@ -18,6 +18,7 @@ var (
 	osType = runtime.GOOS
 	dat = "dat"
 	xml = "xml"
+	hdr = "hdr"
 	PersionPrefix = "Prep_"
 	PersionSuffix = fmt.Sprintf(".%s", dat)
 	defaultWorkers = 10
@@ -97,8 +98,15 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 			results <- true
 			continue
 		}
+		// P目录下的对应hdr文件不存在跳过
+		if !file.IsFileExist(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr)) {
+			log.Sugar.Infof("文件 %s 不存在, 跳过", fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
+			results <- true
+			continue
+		}
 		// M目录下的对应xml文件不存在跳过
 		if !file.IsFileExist(path.Join(dirWithoutP, "M", splitName), fmt.Sprintf("%s.%s", splitName, xml)) {
+			log.Sugar.Infof("文件 %s 不存在, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
 			results <- true
 			continue
 		}
@@ -113,6 +121,8 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 		dstXml := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, xml))
 		srcDat := path.Join(k, v.Name())
 		dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
+		srcHdr := path.Join(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
+		dstHdr := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, hdr))
 		if _, err := file.StandardCopy(srcXml, dstXml); err != nil {
 			log.Logger.Error(err.Error())
 			results <- true
@@ -125,6 +135,12 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 			continue
 		}
 		log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s", id, srcDat, dstDat)
+		if _, err := file.StandardCopy(srcHdr, dstHdr); err != nil {
+			log.Logger.Error(err.Error())
+			results <- true
+			continue
+		}
+		log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s", id, srcHdr, dstHdr)
 		results <- true
 	}
 }
