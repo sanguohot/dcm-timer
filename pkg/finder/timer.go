@@ -10,7 +10,7 @@ func timerTask()  {
 	now := time.Now()
 	ShowFileList()
 	CopyFileToDst()
-	log.Sugar.Infof("搬砖完毕, 耗时 ===> %f 秒", time.Since(now).Seconds())
+	log.Sugar.Infof("拷贝完毕, 耗时 ===> %f 秒", time.Since(now).Seconds())
 }
 
 func init() {

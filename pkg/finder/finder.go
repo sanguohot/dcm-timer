@@ -49,7 +49,6 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 	if info.IsDir() {
 		return nil
 	} else {
-		parentDir := srcPath[:strings.LastIndex(srcPath, GetSplitBySystem())]
 		if !strings.Contains(srcPath, GetDcmTypeFilterBySystemSplit("P")) {
 			return nil
 		}
@@ -58,13 +57,28 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 		}else if info.ModTime().Before(since) {
 			return nil
 		}
-		if strings.HasPrefix(info.Name(), PersionPrefix) && strings.HasSuffix(info.Name(), PersionSuffix) {
-			fileInfo, ok := PersionMap[parentDir]
-			if !ok {
-				PersionMap[parentDir] = info
-			}else if fileInfo.Size() < info.Size() {
-				PersionMap[parentDir] = info
-			}
+		// 不是Prep_s2018102922221914708.dat形式的文件跳过
+		if !strings.HasPrefix(info.Name(), PersionPrefix) || !strings.HasSuffix(info.Name(), PersionSuffix) {
+			return nil
+		}
+		parentDir := srcPath[:strings.LastIndex(srcPath, GetSplitBySystem())]
+		splitName := info.Name()[len(PersionPrefix):strings.LastIndex(info.Name(), PersionSuffix)]
+		dirWithoutP := parentDir[:strings.LastIndex(parentDir, GetDcmTypeFilterLeftBySystemSplit("P"))]
+		// P目录下的对应hdr文件不存在跳过
+		if !file.IsFileExist(parentDir, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr)) {
+			log.Sugar.Warnf("%s不存在, 跳过", fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
+			return nil
+		}
+		// M目录下的对应xml文件不存在跳过
+		if !file.IsFileExist(path.Join(dirWithoutP, "M", splitName), fmt.Sprintf("%s.%s", splitName, xml)) {
+			log.Sugar.Warnf("%s不存在, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
+			return nil
+		}
+		fileInfo, ok := PersionMap[parentDir]
+		if !ok {
+			PersionMap[parentDir] = info
+		}else if fileInfo.Size() < info.Size() {
+			PersionMap[parentDir] = info
 		}
 		return nil
 	}
@@ -87,18 +101,6 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 		log.Sugar.Debugf("k=%s, name=%s, size=%d, splitName=%s, dirWithoutP=%s", k, v.Name(), v.Size(), splitName, dirWithoutP)
 		// dat已经拷贝跳过
 		dstDir := path.Join(etc.GetDstPath(), splitName)
-		// P目录下的对应hdr文件不存在跳过
-		if !file.IsFileExist(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr)) {
-			log.Sugar.Infof("%s不存在, 跳过", fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
-			results <- false
-			continue
-		}
-		// M目录下的对应xml文件不存在跳过
-		if !file.IsFileExist(path.Join(dirWithoutP, "M", splitName), fmt.Sprintf("%s.%s", splitName, xml)) {
-			log.Sugar.Infof("%s不存在, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
-			results <- false
-			continue
-		}
 		// 确保目录存在
 		if err := EnsureDir(dstDir); err != nil {
 			log.Logger.Error(err.Error())
@@ -112,52 +114,48 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 		dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
 		srcHdr := path.Join(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
 		dstHdr := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, hdr))
-		realCpCnt := 0
 		// xml已经拷贝跳过
 		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, xml)) {
-			log.Sugar.Infof("搬砖者:%d %s已拷贝, 跳过", id, dstXml)
+			log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstXml)
 		}else if size, err := file.StandardCopy(srcXml, dstXml); err != nil {
 			log.Logger.Error(err.Error())
 			results <- false
 			continue
 		}else {
-			realCpCnt++
-			log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcXml, dstXml, size/1024)
+			log.Sugar.Infof("拷贝者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcXml, dstXml, size/1024)
 		}
 		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, dat)) {
-			log.Sugar.Infof("搬砖者:%d %s已拷贝, 跳过", id, dstDat)
+			log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstDat)
 		}else if size, err := file.StandardCopy(srcDat, dstDat); err != nil {
 			log.Logger.Error(err.Error())
 			results <- false
 			continue
 		}else {
-			realCpCnt++
-			log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcDat, dstDat, size/1024)
+			log.Sugar.Infof("拷贝者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcDat, dstDat, size/1024)
 		}
 		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, hdr)) {
-			log.Sugar.Infof("搬砖者:%d %s已拷贝, 跳过", id, dstHdr)
+			log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstHdr)
 		}else if size, err := file.StandardCopy(srcHdr, dstHdr); err != nil {
 			log.Logger.Error(err.Error())
 			results <- false
 			continue
 		}else {
-			realCpCnt++
-			log.Sugar.Infof("搬砖者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcHdr, dstHdr, size/1024)
+			log.Sugar.Infof("拷贝者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcHdr, dstHdr, size/1024)
 		}
-		if realCpCnt > 0 {
-			results <- true
-		}else {
-			results <- false
-		}
+		results <- true
 	}
 }
 
 func CopyFileToDst()  {
+	if len(PersionMap) <= 0 {
+		log.Sugar.Info("需拷贝数 ===> 0")
+		return
+	}
 	workers := defaultWorkers
 	if len(PersionMap) < defaultWorkers {
 		workers = len(PersionMap)
 	}
-	log.Sugar.Infof("预处理数 ===> %d, 搬砖者数 ===> %d", len(PersionMap), workers)
+	log.Sugar.Infof("需拷贝数 ===> %d, 拷贝者数 ===> %d", len(PersionMap), workers)
 	jobs := make(chan string, len(PersionMap))
 	results := make(chan bool, len(PersionMap))
 	for w := 1; w <= workers; w++ {
@@ -175,7 +173,7 @@ func CopyFileToDst()  {
 		}
 	}
 	close(results)
-	log.Sugar.Infof("预处理数 ===> %d, 实处理数 ===> %d", len(PersionMap), cnt)
+	log.Sugar.Infof("需拷贝数 ===> %d, 已拷贝数 ===> %d", len(PersionMap), cnt)
 }
 
 func EnsureDir(dir string) error {
