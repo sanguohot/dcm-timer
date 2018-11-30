@@ -139,7 +139,7 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 
 func copyWorkerCore(id int, srcFile, dstFile string) (bool, error) {
 	if !file.FilePathExist(srcFile) {
-		log.Sugar.Debugf("拷贝者:%d %s不存在, 跳过", id, srcFile)
+		log.Sugar.Infof("拷贝者:%d %s不存在, 跳过", id, srcFile)
 		return true, nil
 	}else if file.FilePathExist(dstFile) {
 		log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstFile)
