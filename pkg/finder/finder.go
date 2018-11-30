@@ -76,11 +76,6 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 			log.Sugar.Warnf("%s不存在, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
 			return nil
 		}
-		// M目录下的对应RawDataRecord.xml文件不存在跳过
-		if !file.IsFileExist(path.Join(dirWithoutP, "M", splitName), rawDataRecordXml) {
-			log.Sugar.Warnf("%s不存在, 跳过", rawDataRecordXml)
-			return nil
-		}
 		fileInfo, ok := PersionMap[parentDir]
 		if !ok {
 			PersionMap[parentDir] = info
@@ -143,7 +138,10 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 }
 
 func copyWorkerCore(id int, srcFile, dstFile string) (bool, error) {
-	if file.FilePathExist(dstFile) {
+	if !file.FilePathExist(srcFile) {
+		log.Sugar.Debugf("拷贝者:%d %s不存在, 跳过", id, srcFile)
+		return true, nil
+	}else if file.FilePathExist(dstFile) {
 		log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstFile)
 		return true, nil
 	}else if size, err := file.StandardCopy(srcFile, dstFile); err != nil {
