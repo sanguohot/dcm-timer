@@ -5,6 +5,7 @@ import (
 	"github.com/sanguohot/dcm-timer/etc"
 	"github.com/sanguohot/dcm-timer/pkg/common/file"
 	"github.com/sanguohot/dcm-timer/pkg/common/log"
+	"go.uber.org/zap"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,6 +24,7 @@ var (
 	PersionSuffix = fmt.Sprintf(".%s", dat)
 	defaultWorkers = 10
 	layout = "2006-01-02 15:04:05"
+	rawDataRecordXml = "RawDataRecord.xml"
 )
 
 func GetSplitBySystem() string {
@@ -74,6 +76,11 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 			log.Sugar.Warnf("%s不存在, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
 			return nil
 		}
+		// M目录下的对应RawDataRecord.xml文件不存在跳过
+		if !file.IsFileExist(path.Join(dirWithoutP, "M", splitName), rawDataRecordXml) {
+			log.Sugar.Warnf("%s不存在, 跳过", rawDataRecordXml)
+			return nil
+		}
 		fileInfo, ok := PersionMap[parentDir]
 		if !ok {
 			PersionMap[parentDir] = info
@@ -110,39 +117,41 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 
 		srcXml := path.Join(dirWithoutP, "M", splitName, fmt.Sprintf("%s.%s", splitName, xml))
 		dstXml := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, xml))
+		srcRawDataRecordXml := path.Join(dirWithoutP, "M", splitName, rawDataRecordXml)
+		dstRawDataRecordXml := path.Join(dstDir, rawDataRecordXml)
 		srcDat := path.Join(k, v.Name())
 		dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
 		srcHdr := path.Join(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
 		dstHdr := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, hdr))
-		// xml已经拷贝跳过
-		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, xml)) {
-			log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstXml)
-		}else if size, err := file.StandardCopy(srcXml, dstXml); err != nil {
-			log.Logger.Error(err.Error())
-			results <- false
-			continue
-		}else {
-			log.Sugar.Infof("拷贝者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcXml, dstXml, size/1024)
-		}
-		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, dat)) {
-			log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstDat)
-		}else if size, err := file.StandardCopy(srcDat, dstDat); err != nil {
-			log.Logger.Error(err.Error())
-			results <- false
-			continue
-		}else {
-			log.Sugar.Infof("拷贝者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcDat, dstDat, size/1024)
-		}
-		if file.IsFileExist(dstDir, fmt.Sprintf("%s.%s", splitName, hdr)) {
-			log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstHdr)
-		}else if size, err := file.StandardCopy(srcHdr, dstHdr); err != nil {
-			log.Logger.Error(err.Error())
-			results <- false
-			continue
-		}else {
-			log.Sugar.Infof("拷贝者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcHdr, dstHdr, size/1024)
+		m := make([]map[string]string, 4)
+		m[0] = map[string]string{"src": srcXml, "dst": dstXml}
+		m[1] = map[string]string{"src": srcRawDataRecordXml, "dst": dstRawDataRecordXml}
+		m[2] = map[string]string{"src": srcDat, "dst": dstDat}
+		m[3] = map[string]string{"src": srcHdr, "dst": dstHdr}
+		for _, item := range m {
+			if bl, err := copyWorkerCore(id, item["src"], item["dst"]); err != nil {
+				goto loopFail
+			}else if !bl {
+				goto loopFail
+			}
 		}
 		results <- true
+		continue
+		loopFail:
+			results <- false
+	}
+}
+
+func copyWorkerCore(id int, srcFile, dstFile string) (bool, error) {
+	if file.FilePathExist(dstFile) {
+		log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstFile)
+		return true, nil
+	}else if size, err := file.StandardCopy(srcFile, dstFile); err != nil {
+		log.Logger.Error(err.Error(), zap.String("src", srcFile), zap.String("dst", dstFile))
+		return false, err
+	}else {
+		log.Sugar.Infof("拷贝者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcFile, dstFile, size/1024)
+		return true, nil
 	}
 }
 
