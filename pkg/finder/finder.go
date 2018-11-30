@@ -24,7 +24,7 @@ var (
 	PersionSuffix = fmt.Sprintf(".%s", dat)
 	defaultWorkers = 10
 	layout = "2006-01-02 15:04:05"
-	rawDataRecordXml = "RawDataRecord.xml"
+	rawDataRecordXml = "RawdataRecord.xml"
 )
 
 func GetSplitBySystem() string {
