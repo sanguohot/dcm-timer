@@ -120,7 +120,7 @@ func CheckDirIsStillWriting(k string) (bool) {
 				isWriting <- true
 			}
 			if now.Add(10 * time.Second).Before(t) {
-				log.Sugar.Infof("目录 %s 10秒内没有任何修改, 拟进行拷贝", k)
+				log.Sugar.Debugf("目录 %s 10秒内没有任何修改, 拟进行拷贝", k)
 				isWriting <- false
 			}
 		}
