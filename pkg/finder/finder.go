@@ -93,47 +93,88 @@ func ShowFileList() {
 	}
 	return
 }
+// 最大延时十秒钟检查目录有没有变化，如果有变化即可返回，没有改变十秒后返回false
+func CheckDirIsStillWriting(k string) (bool) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	isWriting := make(chan bool, 1)
+	go func() {
+		now := time.Now()
+		var it *time.Time
+		for t := range ticker.C {
+			log.Sugar.Debugf("%v 开始检查目录 %s", t, k)
+			info, err := os.Stat(k)
+			if err != nil {
+				log.Logger.Error(err.Error(), zap.String("k", k))
+				continue
+			}
+			modTime := info.ModTime()
+			log.Sugar.Debugf("目录 %s 最近修改时间 %v", k, modTime)
+			if modTime.After(now) {
+				log.Sugar.Infof("目录 %s 有写入, 跳过拷贝", k)
+				isWriting <- true
+			}
+			if it == nil {
+				it = &modTime
+			}else if it.Before(modTime) {
+				log.Sugar.Infof("目录 %s 有写入, 跳过拷贝", k)
+				isWriting <- true
+			}
+			if now.Add(10 * time.Second).Before(t) {
+				log.Sugar.Infof("目录 %s 10秒内没有任何修改, 拟进行拷贝", k)
+				isWriting <- false
+			}
+		}
+	}()
+	result := <-isWriting
+	ticker.Stop()
+	return result
+}
+
+func CopyWorkerJob(id int, k string, v os.FileInfo) error {
+	if CheckDirIsStillWriting(k) {
+		return fmt.Errorf("目录 %s 持续写入, 跳过处理", k)
+	}
+	splitName := v.Name()[len(PersionPrefix):strings.LastIndex(v.Name(), PersionSuffix)]
+	dirWithoutP := k[:strings.LastIndex(k, GetDcmTypeFilterLeftBySystemSplit("P"))]
+	log.Sugar.Debugf("k=%s, name=%s, size=%d, splitName=%s, dirWithoutP=%s", k, v.Name(), v.Size(), splitName, dirWithoutP)
+	// dat已经拷贝跳过
+	dstDir := path.Join(etc.GetDstPath(), splitName)
+	// 确保目录存在
+	if err := EnsureDir(dstDir); err != nil {
+		return err
+	}
+
+	srcXml := path.Join(dirWithoutP, "M", splitName, fmt.Sprintf("%s.%s", splitName, xml))
+	dstXml := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, xml))
+	srcRawDataRecordXml := path.Join(dirWithoutP, "M", splitName, rawDataRecordXml)
+	dstRawDataRecordXml := path.Join(dstDir, rawDataRecordXml)
+	srcDat := path.Join(k, v.Name())
+	dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
+	srcHdr := path.Join(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
+	dstHdr := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, hdr))
+	m := make([]map[string]string, 4)
+	m[0] = map[string]string{"src": srcXml, "dst": dstXml}
+	m[1] = map[string]string{"src": srcRawDataRecordXml, "dst": dstRawDataRecordXml}
+	m[2] = map[string]string{"src": srcDat, "dst": dstDat}
+	m[3] = map[string]string{"src": srcHdr, "dst": dstHdr}
+	for _, item := range m {
+		if bl, err := copyWorkerCore(id, item["src"], item["dst"]); err != nil {
+			return err
+		}else if !bl {
+			return err
+		}
+	}
+	return nil
+}
 
 func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
 	for j := range jobs {
-		k := j
-		v := PersionMap[j]
-		splitName := v.Name()[len(PersionPrefix):strings.LastIndex(v.Name(), PersionSuffix)]
-		dirWithoutP := k[:strings.LastIndex(k, GetDcmTypeFilterLeftBySystemSplit("P"))]
-		log.Sugar.Debugf("k=%s, name=%s, size=%d, splitName=%s, dirWithoutP=%s", k, v.Name(), v.Size(), splitName, dirWithoutP)
-		// dat已经拷贝跳过
-		dstDir := path.Join(etc.GetDstPath(), splitName)
-		// 确保目录存在
-		if err := EnsureDir(dstDir); err != nil {
-			log.Logger.Error(err.Error())
+		if err := CopyWorkerJob(id, j, PersionMap[j]); err != nil {
 			results <- false
+			log.Logger.Error(err.Error(), zap.String("k", j))
 			continue
 		}
-
-		srcXml := path.Join(dirWithoutP, "M", splitName, fmt.Sprintf("%s.%s", splitName, xml))
-		dstXml := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, xml))
-		srcRawDataRecordXml := path.Join(dirWithoutP, "M", splitName, rawDataRecordXml)
-		dstRawDataRecordXml := path.Join(dstDir, rawDataRecordXml)
-		srcDat := path.Join(k, v.Name())
-		dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
-		srcHdr := path.Join(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
-		dstHdr := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, hdr))
-		m := make([]map[string]string, 4)
-		m[0] = map[string]string{"src": srcXml, "dst": dstXml}
-		m[1] = map[string]string{"src": srcRawDataRecordXml, "dst": dstRawDataRecordXml}
-		m[2] = map[string]string{"src": srcDat, "dst": dstDat}
-		m[3] = map[string]string{"src": srcHdr, "dst": dstHdr}
-		for _, item := range m {
-			if bl, err := copyWorkerCore(id, item["src"], item["dst"]); err != nil {
-				goto loopFail
-			}else if !bl {
-				goto loopFail
-			}
-		}
 		results <- true
-		continue
-		loopFail:
-			results <- false
 	}
 }
 
