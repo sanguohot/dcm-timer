@@ -2,6 +2,7 @@ package finder
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"github.com/sanguohot/dcm-timer/etc"
 	"github.com/sanguohot/dcm-timer/pkg/common/file"
 	"github.com/sanguohot/dcm-timer/pkg/common/log"
@@ -22,7 +23,7 @@ var (
 	hdr = "hdr"
 	PersionPrefix = "Prep_"
 	PersionSuffix = fmt.Sprintf(".%s", dat)
-	defaultWorkers = 10
+	defaultWorkers = etc.Config.MaxWorker
 	layout = "2006-01-02 15:04:05"
 	rawDataRecordXml = "RawdataRecord.xml"
 )
@@ -93,34 +94,40 @@ func ShowFileList() {
 	}
 	return
 }
-// 最大延时十秒钟检查目录有没有变化，如果有变化即可返回，没有改变十秒后返回false
+// 最大延时etc.Config.CopyWaitTime秒钟检查目录有没有变化，如果有变化即可返回，没有改变etc.Config.CopyWaitTime秒后返回false
 func CheckDirIsStillWriting(k string) (bool) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	isWriting := make(chan bool, 1)
 	go func() {
 		now := time.Now()
-		var it *time.Time
 		for t := range ticker.C {
 			log.Sugar.Debugf("%v 开始检查目录 %s", t, k)
-			info, err := os.Stat(k)
+			dirInfo, err := os.Stat(k)
 			if err != nil {
 				log.Logger.Error(err.Error(), zap.String("k", k))
 				continue
 			}
-			modTime := info.ModTime()
+			modTime := dirInfo.ModTime()
 			log.Sugar.Debugf("目录 %s 最近修改时间 %v", k, modTime)
 			if modTime.After(now) {
 				log.Sugar.Infof("目录 %s 有写入, 跳过拷贝", k)
 				isWriting <- true
+				break
 			}
-			if it == nil {
-				it = &modTime
-			}else if it.Before(modTime) {
-				log.Sugar.Infof("目录 %s 有写入, 跳过拷贝", k)
+			err = filepath.Walk(k, func(path string, info os.FileInfo, err error) error {
+				if info.ModTime().After(now) {
+					log.Sugar.Infof("文件 %s => %s 有写入, 跳过拷贝", path, info.Name())
+					return errors.New("FILE_WRITING")
+				}
+				return nil
+			})
+			if err != nil {
 				isWriting <- true
+				break
 			}
-			if now.Add(10 * time.Second).Before(t) {
-				log.Sugar.Debugf("目录 %s 10秒内没有任何修改, 拟进行拷贝", k)
+			tenSecLater := now.Add(time.Duration(etc.Config.CopyWaitTime) * time.Second)
+			if tenSecLater.Before(t) {
+				log.Sugar.Infof("%d秒内目录 %s 没有任何修改, 拟进行拷贝, %d vs %d", etc.Config.CopyWaitTime, k, tenSecLater.Unix(), t.Unix())
 				isWriting <- false
 			}
 		}
@@ -220,7 +227,7 @@ func CopyFileToDst()  {
 			cnt++
 		}
 	}
-	close(results)
+	//close(results)
 	log.Sugar.Infof("需拷贝数 ===> %d, 已拷贝数 ===> %d", len(PersionMap), cnt)
 }
 

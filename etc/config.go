@@ -14,6 +14,8 @@ type ConfigStruct struct {
 	Output   string `json:"output"`
 	Interval int    `json:"interval"`
 	Since string    `json:"since"`
+	MaxWorker int    `mapstructure:"max_worker"`
+	CopyWaitTime int `mapstructure:"copy_wait_time"`
 }
 
 var (

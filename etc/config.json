@@ -2,5 +2,7 @@
 	"output": "./data/dst",
 	"interval": 10,
 	"since": "2017-11-21 00:00:00",
-	"source": "./data/src"
+	"source": "./data/src",
+	"max_worker": 100,
+	"copy_wait_time": 30
 }
