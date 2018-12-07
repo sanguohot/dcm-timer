@@ -127,7 +127,7 @@ func CheckDirIsStillWriting(k string) (bool) {
 			}
 			tenSecLater := now.Add(time.Duration(etc.Config.CopyWaitTime) * time.Second)
 			if tenSecLater.Before(t) {
-				log.Sugar.Infof("%d秒内目录 %s 没有任何修改, 拟进行拷贝, %d vs %d", etc.Config.CopyWaitTime, k, tenSecLater.Unix(), t.Unix())
+				log.Sugar.Debugf("%d秒内目录 %s 没有任何修改, 拟进行拷贝, %d vs %d", etc.Config.CopyWaitTime, k, tenSecLater.Unix(), t.Unix())
 				isWriting <- false
 			}
 		}
