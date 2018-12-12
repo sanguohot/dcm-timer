@@ -100,6 +100,10 @@ func CheckDirIsStillWriting(k string) (bool) {
 	isWriting := make(chan bool, 1)
 	go func() {
 		now := time.Now()
+		var (
+			maxDirSize int64 = 0
+			curDirSize int64 = 0
+		)
 		for t := range ticker.C {
 			log.Sugar.Debugf("%v 开始检查目录 %s", t, k)
 			dirInfo, err := os.Stat(k)
@@ -110,18 +114,28 @@ func CheckDirIsStillWriting(k string) (bool) {
 			modTime := dirInfo.ModTime()
 			log.Sugar.Debugf("目录 %s 最近修改时间 %v", k, modTime)
 			if modTime.After(now) {
-				log.Sugar.Infof("目录 %s 有写入, 跳过拷贝", k)
+				log.Sugar.Infof("目录 %s 有写入, 修改时间更新 %d => %d,跳过拷贝", k, now.Unix(), modTime.Unix())
 				isWriting <- true
 				break
 			}
+			curDirSize = 0
 			err = filepath.Walk(k, func(path string, info os.FileInfo, err error) error {
 				if info.ModTime().After(now) {
 					log.Sugar.Infof("文件 %s => %s 有写入, 跳过拷贝", path, info.Name())
 					return errors.New("FILE_WRITING")
 				}
+				curDirSize += info.Size()
 				return nil
 			})
 			if err != nil {
+				isWriting <- true
+				break
+			}
+			if maxDirSize == 0 {
+				maxDirSize = curDirSize
+			}
+			if maxDirSize < curDirSize {
+				log.Sugar.Infof("目录 %s 有写入, 占用空间增大 %d => %d, 跳过拷贝", k, maxDirSize, curDirSize)
 				isWriting <- true
 				break
 			}
