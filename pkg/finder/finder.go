@@ -243,6 +243,7 @@ func CopyFileToDst()  {
 	}
 	//close(results)
 	log.Sugar.Infof("需拷贝数 ===> %d, 已拷贝数 ===> %d", len(PersionMap), cnt)
+	PersionMap = make(map[string]os.FileInfo)
 }
 
 func EnsureDir(dir string) error {
