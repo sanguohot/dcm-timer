@@ -16,20 +16,20 @@ import (
 )
 
 var (
-	PersionMap map[string]os.FileInfo = make(map[string]os.FileInfo)
-	osType = runtime.GOOS
-	dat = "dat"
-	xml = "xml"
-	hdr = "hdr"
-	PersionPrefix = "Prep_"
-	PersionSuffix = fmt.Sprintf(".%s", dat)
-	defaultWorkers = etc.Config.MaxWorker
-	layout = "2006-01-02 15:04:05"
-	rawDataRecordXml = "RawdataRecord.xml"
+	PersionMap       map[string]os.FileInfo = make(map[string]os.FileInfo)
+	osType                                  = runtime.GOOS
+	dat                                     = "dat"
+	xml                                     = "xml"
+	hdr                                     = "hdr"
+	PersionPrefix                           = "Prep_"
+	PersionSuffix                           = fmt.Sprintf(".%s", dat)
+	defaultWorkers                          = etc.Config.MaxWorker
+	layout                                  = "2006-01-02 15:04:05"
+	rawDataRecordXml                        = "RawdataRecord.xml"
 )
 
 func GetSplitBySystem() string {
-	if osType == "windows"{
+	if osType == "windows" {
 		return "\\"
 	}
 	return "/"
@@ -57,7 +57,7 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 		}
 		if since, err := time.ParseInLocation(layout, etc.Config.Since, time.Local); err != nil {
 			return err
-		}else if info.ModTime().Before(since) {
+		} else if info.ModTime().Before(since) {
 			return nil
 		}
 		// 不是Prep_s2018102922221914708.dat形式的文件跳过
@@ -80,7 +80,7 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 		fileInfo, ok := PersionMap[parentDir]
 		if !ok {
 			PersionMap[parentDir] = info
-		}else if fileInfo.Size() < info.Size() {
+		} else if fileInfo.Size() < info.Size() {
 			PersionMap[parentDir] = info
 		}
 		return nil
@@ -94,8 +94,9 @@ func ShowFileList() {
 	}
 	return
 }
+
 // 最大延时etc.Config.CopyWaitTime秒钟检查目录有没有变化，如果有变化即可返回，没有改变etc.Config.CopyWaitTime秒后返回false
-func CheckDirIsStillWriting(k string) (bool) {
+func CheckDirIsStillWriting(k string) bool {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	isWriting := make(chan bool, 1)
 	go func() {
@@ -114,14 +115,14 @@ func CheckDirIsStillWriting(k string) (bool) {
 			modTime := dirInfo.ModTime()
 			log.Sugar.Debugf("目录 %s 最近修改时间 %v", k, modTime)
 			if modTime.After(now) {
-				log.Sugar.Infof("目录 %s 有写入, 修改时间更新 %d => %d,跳过拷贝", k, now.Unix(), modTime.Unix())
+				log.Sugar.Infof("目录 %s 正在写入, 修改时间更新 %d => %d,跳过拷贝", k, now.Unix(), modTime.Unix())
 				isWriting <- true
 				break
 			}
 			curDirSize = 0
 			err = filepath.Walk(k, func(path string, info os.FileInfo, err error) error {
 				if info.ModTime().After(now) {
-					log.Sugar.Infof("文件 %s => %s 有写入, 跳过拷贝", path, info.Name())
+					log.Sugar.Infof("文件 %s 正在写入, 跳过拷贝", path)
 					return errors.New("FILE_WRITING")
 				}
 				curDirSize += info.Size()
@@ -135,7 +136,7 @@ func CheckDirIsStillWriting(k string) (bool) {
 				maxDirSize = curDirSize
 			}
 			if maxDirSize < curDirSize {
-				log.Sugar.Infof("目录 %s 有写入, 占用空间增大 %d => %d, 跳过拷贝", k, maxDirSize, curDirSize)
+				log.Sugar.Infof("目录 %s 正在写入, 占用空间增大 %d => %d, 跳过拷贝", k, maxDirSize, curDirSize)
 				isWriting <- true
 				break
 			}
@@ -170,7 +171,7 @@ func CopyWorkerJob(id int, k string, v os.FileInfo) error {
 	srcRawDataRecordXml := path.Join(dirWithoutP, "M", splitName, rawDataRecordXml)
 	dstRawDataRecordXml := path.Join(dstDir, rawDataRecordXml)
 	srcDat := path.Join(k, v.Name())
-	dstDat := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, dat))
+	dstDat := path.Join(dstDir, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, dat))
 	srcHdr := path.Join(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
 	dstHdr := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, hdr))
 	m := make([]map[string]string, 4)
@@ -181,14 +182,14 @@ func CopyWorkerJob(id int, k string, v os.FileInfo) error {
 	for _, item := range m {
 		if bl, err := copyWorkerCore(id, item["src"], item["dst"]); err != nil {
 			return err
-		}else if !bl {
+		} else if !bl {
 			return err
 		}
 	}
 	return nil
 }
 
-func CopyWorker(id int, jobs <-chan string, results chan<- bool)  {
+func CopyWorker(id int, jobs <-chan string, results chan<- bool) {
 	for j := range jobs {
 		if err := CopyWorkerJob(id, j, PersionMap[j]); err != nil {
 			results <- false
@@ -203,19 +204,19 @@ func copyWorkerCore(id int, srcFile, dstFile string) (bool, error) {
 	if !file.FilePathExist(srcFile) {
 		log.Sugar.Infof("拷贝者:%d %s不存在, 跳过", id, srcFile)
 		return true, nil
-	}else if file.FilePathExist(dstFile) {
+	} else if file.FilePathExist(dstFile) {
 		log.Sugar.Debugf("拷贝者:%d %s已拷贝, 跳过", id, dstFile)
 		return true, nil
-	}else if size, err := file.StandardCopy(srcFile, dstFile); err != nil {
+	} else if size, err := file.StandardCopy(srcFile, dstFile); err != nil {
 		log.Logger.Error(err.Error(), zap.String("src", srcFile), zap.String("dst", dstFile))
 		return false, err
-	}else {
+	} else {
 		log.Sugar.Infof("拷贝者:%d 拷贝成功 %s ===> %s, 约 %d KB", id, srcFile, dstFile, size/1024)
 		return true, nil
 	}
 }
 
-func CopyFileToDst()  {
+func CopyFileToDst() {
 	if len(PersionMap) <= 0 {
 		log.Sugar.Info("需拷贝数 ===> 0")
 		return
@@ -252,4 +253,3 @@ func EnsureDir(dir string) error {
 	}
 	return nil
 }
-
