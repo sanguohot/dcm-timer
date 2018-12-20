@@ -173,7 +173,7 @@ func CopyWorkerJob(id int, k string, v os.FileInfo) error {
 	srcDat := path.Join(k, v.Name())
 	dstDat := path.Join(dstDir, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, dat))
 	srcHdr := path.Join(k, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
-	dstHdr := path.Join(dstDir, fmt.Sprintf("%s.%s", splitName, hdr))
+	dstHdr := path.Join(dstDir, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
 	m := make([]map[string]string, 4)
 	m[0] = map[string]string{"src": srcXml, "dst": dstXml}
 	m[1] = map[string]string{"src": srcRawDataRecordXml, "dst": dstRawDataRecordXml}
