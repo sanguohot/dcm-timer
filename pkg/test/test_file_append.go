@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/sanguohot/dcm-timer/etc"
 	"github.com/sanguohot/dcm-timer/pkg/common/log"
 	"go.uber.org/zap"
 	"os"
@@ -13,7 +12,7 @@ import (
 	"time"
 )
 
-func ApendToFile(filePath string)  {
+func ApendToFile(filePath string) {
 	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_APPEND, os.ModePerm)
 	if err != nil {
 		log.Logger.Fatal(err.Error())
@@ -25,17 +24,7 @@ func ApendToFile(filePath string)  {
 	log.Sugar.Debugf("append %s, size => %d, content => %s", filePath, n, uuid.New().String())
 }
 
-func ApendToFileTask(filePath string)  {
-	ticks := time.NewTicker(time.Duration(10) * time.Millisecond)
-	tick := ticks.C
-	go func() {
-		for _ = range tick {
-			ApendToFile(filePath)
-		}
-	}()
-}
-
-func CheckDirIsStillWriting(k string) (bool) {
+func CheckDirIsStillWriting(k string) bool {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	isWriting := make(chan bool, 1)
 	go func() {
@@ -91,17 +80,13 @@ func CheckDirIsStillWriting(k string) (bool) {
 	return result
 }
 
-func CheckDir(dirPath string)  {
+func CheckDir(dirPath string) {
 	go CheckDirIsStillWriting(dirPath)
 }
 
-func main()  {
-	dirPath := path.Join(etc.GetServerDir(), "data/test/")
-	filePath := path.Join(dirPath, "test.txt")
-	ApendToFileTask(filePath)
+func main() {
+	dirPath := path.Join("/opt/syncthing-default/movie")
 	CheckDir(dirPath)
-	//time.Sleep(time.Second * 10)
-
 	quit := make(chan os.Signal, 1)
 	<-quit
 	//finder.CheckDirIsStillWriting()

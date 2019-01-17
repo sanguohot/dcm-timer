@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
-func main()  {
-	fmt.Println(time.Now().Unix())
+func main() {
+	now := time.Now()
+	fmt.Println(now.Unix())
+	fmt.Println(now.Add(10 * time.Second).Unix())
+	fmt.Println(now.Unix())
 }
