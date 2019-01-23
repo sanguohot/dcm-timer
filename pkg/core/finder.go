@@ -1,4 +1,4 @@
-package finder
+package core
 
 import (
 	"fmt"
@@ -16,34 +16,41 @@ import (
 )
 
 var (
-	PersionMap       map[string]os.FileInfo = make(map[string]os.FileInfo)
-	osType                                  = runtime.GOOS
-	dat                                     = "dat"
-	xml                                     = "xml"
-	hdr                                     = "hdr"
-	PersionPrefix                           = "Prep_"
-	PersionSuffix                           = fmt.Sprintf(".%s", dat)
-	defaultWorkers                          = etc.Config.MaxWorker
-	layout                                  = "2006-01-02 15:04:05"
-	rawDataRecordXml                        = "RawdataRecord.xml"
+	osType           = runtime.GOOS
+	dat              = "dat"
+	xml              = "xml"
+	hdr              = "hdr"
+	PersionPrefix    = "Prep_"
+	PersionSuffix    = fmt.Sprintf(".%s", dat)
+	defaultWorkers   = etc.Config.MaxWorker
+	layout           = "2006-01-02 15:04:05"
+	rawDataRecordXml = "RawdataRecord.xml"
 )
 
-func GetSplitBySystem() string {
+type Finder struct {
+	PersionMap map[string]os.FileInfo
+}
+
+func NewFinder() *Finder {
+	return &Finder{PersionMap: make(map[string]os.FileInfo)}
+}
+
+func (f *Finder) GetSplitBySystem() string {
 	if osType == "windows" {
 		return "\\"
 	}
 	return "/"
 }
 
-func GetDcmTypeFilterBySystemSplit(filter string) string {
-	return fmt.Sprintf("%s%s%s", GetSplitBySystem(), filter, GetSplitBySystem())
+func (f *Finder) GetDcmTypeFilterBySystemSplit(filter string) string {
+	return fmt.Sprintf("%s%s%s", f.GetSplitBySystem(), filter, f.GetSplitBySystem())
 }
 
-func GetDcmTypeFilterLeftBySystemSplit(filter string) string {
-	return fmt.Sprintf("%s%s", GetSplitBySystem(), filter)
+func (f *Finder) GetDcmTypeFilterLeftBySystemSplit(filter string) string {
+	return fmt.Sprintf("%s%s", f.GetSplitBySystem(), filter)
 }
 
-func WalkFunc(srcPath string, info os.FileInfo, err error) error {
+func (f *Finder) finderWalkFunc(srcPath string, info os.FileInfo, err error) error {
 	if info == nil {
 		log.Sugar.Infof("找不到路径 %s", srcPath)
 		return nil
@@ -52,21 +59,28 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 	if info.IsDir() {
 		return nil
 	} else {
-		if !strings.Contains(srcPath, GetDcmTypeFilterBySystemSplit("P")) {
+		if !strings.Contains(srcPath, f.GetDcmTypeFilterBySystemSplit("P")) {
 			return nil
 		}
-		if since, err := time.ParseInLocation(layout, etc.Config.Since, time.Local); err != nil {
+		since, err := time.ParseInLocation(layout, etc.Config.Since, time.Local)
+		if err != nil {
 			return err
-		} else if info.ModTime().Before(since) {
+		}
+		t := time.Now().Add(-time.Duration(etc.Config.HoldDays) * 24 * time.Hour)
+		hold := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+		if since.Before(hold) {
+			since = hold
+		}
+		if info.ModTime().Before(since) {
 			return nil
 		}
 		// 不是Prep_s2018102922221914708.dat形式的文件跳过
 		if !strings.HasPrefix(info.Name(), PersionPrefix) || !strings.HasSuffix(info.Name(), PersionSuffix) {
 			return nil
 		}
-		parentDir := srcPath[:strings.LastIndex(srcPath, GetSplitBySystem())]
+		parentDir := srcPath[:strings.LastIndex(srcPath, f.GetSplitBySystem())]
 		splitName := info.Name()[len(PersionPrefix):strings.LastIndex(info.Name(), PersionSuffix)]
-		dirWithoutP := parentDir[:strings.LastIndex(parentDir, GetDcmTypeFilterLeftBySystemSplit("P"))]
+		dirWithoutP := parentDir[:strings.LastIndex(parentDir, f.GetDcmTypeFilterLeftBySystemSplit("P"))]
 		// P目录下的对应hdr文件不存在跳过
 		if !file.IsFileExist(parentDir, fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr)) {
 			log.Sugar.Warnf("%s不存在, 跳过", fmt.Sprintf("%s%s.%s", PersionPrefix, splitName, hdr))
@@ -77,26 +91,26 @@ func WalkFunc(srcPath string, info os.FileInfo, err error) error {
 			log.Sugar.Warnf("%s不存在, 跳过", fmt.Sprintf("%s.%s", splitName, xml))
 			return nil
 		}
-		fileInfo, ok := PersionMap[parentDir]
+		fileInfo, ok := f.PersionMap[parentDir]
 		if !ok {
-			PersionMap[parentDir] = info
+			f.PersionMap[parentDir] = info
 		} else if fileInfo.Size() < info.Size() {
-			PersionMap[parentDir] = info
+			f.PersionMap[parentDir] = info
 		}
 		return nil
 	}
 }
 
-func ShowFileList() {
+func (f *Finder) ShowFileList() {
 	log.Sugar.Infof("检索目录 ===> %s", etc.GetSrcPath())
-	if err := filepath.Walk(etc.GetSrcPath(), WalkFunc); err != nil {
+	if err := filepath.Walk(etc.GetSrcPath(), f.finderWalkFunc); err != nil {
 		log.Logger.Error(err.Error())
 	}
 	return
 }
 
 // 最大延时etc.Config.CopyWaitTime秒钟检查目录有没有变化，如果有变化即可返回，没有改变etc.Config.CopyWaitTime秒后返回false
-func CheckDirIsStillWriting(k string) bool {
+func (f *Finder) CheckDirIsStillWriting(k string) bool {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	isWriting := make(chan bool, 1)
 	go func() {
@@ -152,17 +166,17 @@ func CheckDirIsStillWriting(k string) bool {
 	return result
 }
 
-func CopyWorkerJob(id int, k string, v os.FileInfo) error {
-	if CheckDirIsStillWriting(k) {
+func (f *Finder) CopyWorkerJob(id int, k string, v os.FileInfo) error {
+	if f.CheckDirIsStillWriting(k) {
 		return fmt.Errorf("目录 %s 持续写入, 跳过处理", k)
 	}
 	splitName := v.Name()[len(PersionPrefix):strings.LastIndex(v.Name(), PersionSuffix)]
-	dirWithoutP := k[:strings.LastIndex(k, GetDcmTypeFilterLeftBySystemSplit("P"))]
+	dirWithoutP := k[:strings.LastIndex(k, f.GetDcmTypeFilterLeftBySystemSplit("P"))]
 	log.Sugar.Debugf("k=%s, name=%s, size=%d, splitName=%s, dirWithoutP=%s", k, v.Name(), v.Size(), splitName, dirWithoutP)
 	// dat已经拷贝跳过
 	dstDir := path.Join(etc.GetDstPath(), splitName)
 	// 确保目录存在
-	if err := EnsureDir(dstDir); err != nil {
+	if err := file.EnsureDir(dstDir); err != nil {
 		return err
 	}
 
@@ -180,7 +194,7 @@ func CopyWorkerJob(id int, k string, v os.FileInfo) error {
 	m[2] = map[string]string{"src": srcDat, "dst": dstDat}
 	m[3] = map[string]string{"src": srcHdr, "dst": dstHdr}
 	for _, item := range m {
-		if bl, err := copyWorkerCore(id, item["src"], item["dst"]); err != nil {
+		if bl, err := f.copyWorkerCore(id, item["src"], item["dst"]); err != nil {
 			return err
 		} else if !bl {
 			return err
@@ -189,9 +203,9 @@ func CopyWorkerJob(id int, k string, v os.FileInfo) error {
 	return nil
 }
 
-func CopyWorker(id int, jobs <-chan string, results chan<- bool) {
+func (f *Finder) CopyWorker(id int, jobs <-chan string, results chan<- bool) {
 	for j := range jobs {
-		if err := CopyWorkerJob(id, j, PersionMap[j]); err != nil {
+		if err := f.CopyWorkerJob(id, j, f.PersionMap[j]); err != nil {
 			results <- false
 			log.Logger.Error(err.Error(), zap.String("k", j))
 			continue
@@ -200,7 +214,7 @@ func CopyWorker(id int, jobs <-chan string, results chan<- bool) {
 	}
 }
 
-func copyWorkerCore(id int, srcFile, dstFile string) (bool, error) {
+func (f *Finder) copyWorkerCore(id int, srcFile, dstFile string) (bool, error) {
 	if !file.FilePathExist(srcFile) {
 		log.Sugar.Infof("拷贝者:%d %s不存在, 跳过", id, srcFile)
 		return true, nil
@@ -216,40 +230,37 @@ func copyWorkerCore(id int, srcFile, dstFile string) (bool, error) {
 	}
 }
 
-func CopyFileToDst() {
-	if len(PersionMap) <= 0 {
+func (f *Finder) CopyFileToDst() {
+	if len(f.PersionMap) <= 0 {
 		log.Sugar.Info("需拷贝数 ===> 0")
 		return
 	}
 	workers := defaultWorkers
-	if len(PersionMap) < defaultWorkers {
-		workers = len(PersionMap)
+	if len(f.PersionMap) < defaultWorkers {
+		workers = len(f.PersionMap)
 	}
-	log.Sugar.Infof("需拷贝数 ===> %d, 拷贝者数 ===> %d", len(PersionMap), workers)
-	jobs := make(chan string, len(PersionMap))
-	results := make(chan bool, len(PersionMap))
+	log.Sugar.Infof("需拷贝数 ===> %d, 拷贝者数 ===> %d", len(f.PersionMap), workers)
+	jobs := make(chan string, len(f.PersionMap))
+	results := make(chan bool, len(f.PersionMap))
 	for w := 1; w <= workers; w++ {
-		go CopyWorker(w, jobs, results)
+		go f.CopyWorker(w, jobs, results)
 	}
-	for k, _ := range PersionMap {
+	for k, _ := range f.PersionMap {
 		jobs <- k
 	}
 	close(jobs)
 	// 这里收集所有结果
 	cnt := 0
-	for a := 1; a <= len(PersionMap); a++ {
+	for a := 1; a <= len(f.PersionMap); a++ {
 		if <-results {
 			cnt++
 		}
 	}
 	//close(results)
-	log.Sugar.Infof("需拷贝数 ===> %d, 已拷贝数 ===> %d", len(PersionMap), cnt)
-	PersionMap = make(map[string]os.FileInfo)
+	log.Sugar.Infof("需拷贝数 ===> %d, 已拷贝数 ===> %d", len(f.PersionMap), cnt)
 }
 
-func EnsureDir(dir string) error {
-	if !file.FilePathExist(dir) {
-		return os.MkdirAll(dir, os.ModePerm)
-	}
-	return nil
+func (f *Finder) FindAndCopy() {
+	f.ShowFileList()
+	f.CopyFileToDst()
 }

@@ -1,56 +1,63 @@
 package etc
 
 import (
-	"github.com/sanguohot/dcm-timer/pkg/common/log"
 	"github.com/spf13/viper"
 	"os"
 	"path"
 )
+
 // auto generate struct
 // https://mholt.github.io/json-to-go/
 // use mapstructure to replace json for '_' key words, e.g. rpc_port,big_data
 type ConfigStruct struct {
-	Source string    `json:"source"`
-	Output   string `json:"output"`
-	Interval int    `json:"interval"`
-	Since string    `json:"since"`
-	MaxWorker int    `mapstructure:"max_worker"`
-	CopyWaitTime int `mapstructure:"copy_wait_time"`
+	Source       string `json:"source"`
+	Output       string `json:"output"`
+	Interval     int    `json:"interval"`
+	Since        string `json:"since"`
+	HoldDays     int    `mapstructure:"hold_days"`
+	MaxWorker    int    `mapstructure:"max_worker"`
+	CopyWaitTime int    `mapstructure:"copy_wait_time"`
+	Log          struct {
+		Path string `json:"path"`
+		Host struct {
+			Address string `json:"address"`
+			Port    int    `json:"port"`
+		} `json:"host"`
+	} `json:"log"`
 }
 
 var (
-	defaultFilePath  = "/etc/config.json"
-	ViperConfig *viper.Viper
-	Config *ConfigStruct
-	serverPath = os.Getenv("DCM_TIMER_PATH")
+	defaultFilePath = "/etc/config.json"
+	ViperConfig     *viper.Viper
+	Config          *ConfigStruct
+	serverPath      = os.Getenv("DCM_TIMER_PATH")
+	serverType      = os.Getenv("DCM_TIMER_TYPE")
+	serverTypeProd  = "production"
 )
 
-func init()  {
+func init() {
 	if serverPath == "" {
 		serverPath = "./"
-		log.Sugar.Warn("DCM_TIMER_PATH env not set, use ./ as default")
 	}
-	log.Sugar.Infof("DCM_TIMER_PATH ===> %s", serverPath)
 	InitConfig(path.Join(GetServerDir(), defaultFilePath))
 }
 func InitConfig(filePath string) {
-	log.Sugar.Infof("config: init config path %s", filePath)
 	ViperConfig = viper.New()
 	if filePath == "" {
 		ViperConfig.SetConfigFile(defaultFilePath)
-	}else {
+	} else {
 		ViperConfig.SetConfigFile(filePath)
 	}
 
 	err := ViperConfig.ReadInConfig()
 	if err != nil {
 		if filePath != defaultFilePath {
-			log.Logger.Fatal(err.Error())
+			panic(err)
 		}
 	}
 	err = ViperConfig.Unmarshal(&Config)
 	if err != nil {
-		log.Logger.Fatal(err.Error())
+		panic(err)
 	}
 }
 func GetServerDir() string {
@@ -64,4 +71,23 @@ func GetDstPath() string {
 
 func GetSrcPath() string {
 	return path.Join(Config.Source)
+}
+
+func ServerTypeIsProd() bool {
+	if serverType == serverTypeProd {
+		return true
+	}
+	return false
+}
+
+func GetLogPath() string {
+	return path.Join(GetServerDir(), Config.Log.Path)
+}
+
+func GetLogHostAddress() string {
+	return Config.Log.Host.Address
+}
+
+func GetLogHostPort() int {
+	return Config.Log.Host.Port
 }

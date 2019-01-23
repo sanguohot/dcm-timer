@@ -91,3 +91,10 @@ func StandardCopy(src, dst string) (int64, error) {
 	nBytes, err := io.Copy(destination, source)
 	return nBytes, err
 }
+
+func EnsureDir(dir string) error {
+	if !FilePathExist(dir) {
+		return os.MkdirAll(dir, os.ModePerm)
+	}
+	return nil
+}

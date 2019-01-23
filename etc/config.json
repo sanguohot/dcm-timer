@@ -2,7 +2,15 @@
 	"output": "./data/dst",
 	"interval": 10,
 	"since": "2017-11-21 00:00:00",
+	"hold_days": 3,
 	"source": "./data/src",
 	"max_worker": 100,
-	"copy_wait_time": 30
+	"copy_wait_time": 10,
+	"log": {
+		"path": "./log/dcm.log",
+		"host": {
+			"address": "0.0.0.0",
+			"port": 9000
+		}
+	}
 }
