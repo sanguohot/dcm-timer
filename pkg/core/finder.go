@@ -68,7 +68,7 @@ func (f *Finder) finderWalkFunc(srcPath string, info os.FileInfo, err error) err
 		}
 		t := time.Now().Add(-time.Duration(etc.Config.HoldDays) * 24 * time.Hour)
 		hold := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
-		if since.Before(hold) {
+		if since.After(hold) {
 			since = hold
 		}
 		if info.ModTime().Before(since) {
